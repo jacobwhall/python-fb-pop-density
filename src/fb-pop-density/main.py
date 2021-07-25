@@ -14,25 +14,51 @@ user_agent = "jacobhall"
 # this should likely stay as-is. it indicates to hdx module what server to connect to
 hdx_site = "prod"
 
-# folder to download zips to
-work_folder = "zips"
+##############################################################################
 
-# set this to true if you want to re-download files even if they already exist
-# (this script does not check the validity of said files)
-rewrite_files = False
 
-# this determines how long (in seconds) to pause between downloads
-# this is a nice thing to do for HDX if you have time to spare
-courtesy_pause = 0
+def unzip_list(zip_paths: list, dest_folder: str, rewrite_files=False):
+    # we now have a list of zip file paths. let's unzip them
+    # make sure destination folder is created
+    unzip_dest = os.path.join(dest_folder, "unzipped")
+    if not os.path.isdir(unzip_dest):
+        try:
+            os.mkdir(unzip_dest)
+        except:
+            raise Exception("Unable to create unzipped file destination folder!")
+    print("Unzipping {} downloaded archives".format(len(zip_paths)))
+    unzipped_paths = []
+    for path in tqdm(zip_paths):
+        if path in unzipped_paths:
+            print("duplicate path detected and skipped: {}".format(path))
+            continue
+        elif not rewrite_files and os.path.exists(path):
+            # TODO: check validity of existing unzipped file?
+            continue
+        try:
+            ZipFile(path).extractall(unzip_dest)
+            # os.remove(path)
+            unzipped_paths.append(path)
+        except:
+            raise Exception("An error occured while extracting {}".format(path))
+    return unzipped_paths
+
 
 ##############################################################################
 
 
-def download_list(download_urls: list, dest_folder: str):
+def download_list(
+    download_urls: list, # list of URLs to download
+    dest_folder: str, # folder to save downloaded zips
+    rewrite_files=False, # should files that already exist be rewritten? (default is skip)
+    unzip_files=True, # should files be unzipped after downloading?
+    courtesy_pause=0, # time in seconds we should wait between downloads
+):
     # make sure dest_folder exists
     if not os.path.exists(dest_folder):
         os.makedirs(dest_folder)
 
+    print("Downloading {} zipped files".format(len(download_urls)))
     zip_paths = []
     for url in tqdm(download_urls):
         # some code from https://stackoverflow.com/q/56950987
@@ -65,35 +91,14 @@ def download_list(download_urls: list, dest_folder: str):
                 )
             )
         sleep(courtesy_pause)
-    return zip_paths
+    if unzip_files:
+        return unzip_list(zip_paths, os.path.join(dest_folder, "unzipped"), rewrite_files=rewrite_files)
+    else:
+        return zip_paths
+
 
 ##############################################################################
 
-def unzip_list(zip_paths: list, dest_folder: str):
-    # we now have a list of zip file paths. let's unzip them
-    # make sure destination folder is created
-    unzip_dest = os.path.join(dest_folder, "unzipped")
-    if not os.path.isdir(unzip_dest):
-        try:
-            os.mkdir(unzip_dest)
-        except:
-            raise Exception("Unable to create unzipped file destination folder!")
-    unzipped_paths = []
-    for path in tqdm(zip_paths):
-        if path in unzipped_paths:
-            print("duplicate path detected and skipped: {}".format(path))
-            continue
-        elif not rewrite_files and os.path.exists(path):
-            # TODO: check validity of existing unzipped file?
-            continue
-        try:
-            ZipFile(path).extractall(unzip_dest)
-            # os.remove(path)
-            unzipped_paths.append(path)
-        except:
-            raise Exception("An error occured while extracting {}".format(path))
-
-##############################################################################
 
 def extract_country_code(name: str):
     code = None
@@ -104,15 +109,22 @@ def extract_country_code(name: str):
             if code is None:
                 code = country.alpha_3
             else:
-                raise Exception("More than one valid country code found for name: {}".format(name))
+                raise Exception(
+                    "More than one valid country code found for name: {}".format(name)
+                )
         else:
             country = pycountry.countries.get(name=bit)
             if country is not None:
                 if code is None:
                     code = country.alpha_3
                 else:
-                    raise Exception("More than one valid country code found for name: {}".format(name))
-    return(code)
+                    raise Exception(
+                        "More than one valid country code found for name: {}".format(
+                            name
+                        )
+                    )
+    return code
+
 
 ##############################################################################
 
@@ -135,15 +147,12 @@ for dataset in datasets:
                 download_urls.append(resource["download_url"])
 
 # list created! now lets download each URL
-print("Downloading {} zipped files".format(len(download_urls)))
 if len(download_urls) > 0:
-    zip_paths = download_list(download_urls, work_folder)
+    paths = download_list(download_urls, "zips")
 else:
     raise Exception("No matching resources found. Something is wrong!")
 # unzip each path in zip_paths
-print("Unzipping {} downloaded archives".format(len(zip_paths)))
-unzip_list(zip_paths, work_folder)
 
-for path in zip_paths:
+for path in paths:
     print(path)
     print(extract_country_code(path))
