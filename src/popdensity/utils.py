@@ -9,21 +9,15 @@ from tqdm import tqdm
 from time import sleep
 import pycountry
 
-# this is your responsibility to update. it is the user agent that will be used by hdx
-user_agent = "jacobhall"
-# this should likely stay as-is. it indicates to hdx module what server to connect to
-hdx_site = "prod"
-
 ##############################################################################
 
 
-def unzip_list(zip_paths: list, dest_folder: str, rewrite_files=False):
+def unzip_list(zip_paths: list, dest_folder: str, rewrite_files=False, cleanup=False):
     # we now have a list of zip file paths. let's unzip them
     # make sure destination folder is created
-    unzip_dest = os.path.join(dest_folder, "unzipped")
-    if not os.path.isdir(unzip_dest):
+    if not os.path.isdir(dest_folder):
         try:
-            os.mkdir(unzip_dest)
+            os.mkdir(dest_folder)
         except:
             raise Exception("Unable to create unzipped file destination folder!")
     print("Unzipping {} downloaded archives".format(len(zip_paths)))
@@ -32,12 +26,17 @@ def unzip_list(zip_paths: list, dest_folder: str, rewrite_files=False):
         if path in unzipped_paths:
             print("duplicate path detected and skipped: {}".format(path))
             continue
+        # TODO: check if file has already been unzipped
+        """
         elif not rewrite_files and os.path.exists(path):
             # TODO: check validity of existing unzipped file?
             continue
+        """
         try:
-            ZipFile(path).extractall(unzip_dest)
-            # os.remove(path)
+            print("got here")
+            ZipFile(path).extractall(dest_folder)
+            if cleanup:
+                os.remove(path)
             unzipped_paths.append(path)
         except:
             raise Exception("An error occured while extracting {}".format(path))
@@ -48,11 +47,11 @@ def unzip_list(zip_paths: list, dest_folder: str, rewrite_files=False):
 
 
 def download_list(
-    download_urls: list, # list of URLs to download
-    dest_folder: str, # folder to save downloaded zips
-    rewrite_files=False, # should files that already exist be rewritten? (default is skip)
-    unzip_files=True, # should files be unzipped after downloading?
-    courtesy_pause=0, # time in seconds we should wait between downloads
+    download_urls: list,  # list of URLs to download
+    dest_folder: str,  # folder to save downloaded zips
+    rewrite_files=False,  # should files that already exist be rewritten? (default is skip)
+    unzip_files=True,  # should files be unzipped after downloading?
+    courtesy_pause=0,  # time in seconds we should wait between downloads
 ):
     # make sure dest_folder exists
     if not os.path.exists(dest_folder):
@@ -71,11 +70,14 @@ def download_list(
         if not rewrite_files and os.path.exists(file_path):
             zip_paths.append(file_path)
             continue
-        # TODO: make this respond to a changed dest_folder
+        # TODO: decide if this check should be in this function, unzip_list, or both
+        # make this respond to a changed dest_folder?
+        """
         elif not rewrite_files and os.path.exists("zips/unzipped/" + filename):
             print("already-unzipped file found, skipping {}".format(filename))
             zip_paths.append(file_path)
             continue
+        """
         # attempt to make request
         request = requests.get(url, stream=True)
         # if request worked out, write file to path
@@ -92,7 +94,11 @@ def download_list(
             )
         sleep(courtesy_pause)
     if unzip_files:
-        return unzip_list(zip_paths, os.path.join(dest_folder, "unzipped"), rewrite_files=rewrite_files)
+        return unzip_list(
+            zip_paths,
+            os.path.join(dest_folder, "unzipped"),
+            rewrite_files=rewrite_files,
+        )
     else:
         return zip_paths
 
@@ -102,7 +108,7 @@ def download_list(
 
 def extract_country_code(name: str):
     code = None
-    bits = re.split("_|\.|/", name)
+    bits = re.split("_|\.|/|-", name)
     for bit in bits:
         country = pycountry.countries.get(alpha_3=bit)
         if country is not None:
@@ -124,35 +130,3 @@ def extract_country_code(name: str):
                         )
                     )
     return code
-
-
-##############################################################################
-
-Configuration.create(hdx_site=hdx_site, user_agent=user_agent, hdx_read_only=True)
-
-fb_org = Organization.read_from_hdx("facebook")
-
-# get list of Facebook datasets matching query
-datasets = fb_org.get_datasets("High Resolution Population Density Maps")
-
-# get a list of download urls of the appropriate data files
-download_urls = []
-for dataset in datasets:
-    if "highresolutionpopulationdensitymaps" in dataset["name"].replace("-", ""):
-        for resource in dataset.get_resources():
-            # if resource["format"] == "CSV" and not "general" in resource["url"]:
-            if resource["format"] == "CSV" and (
-                "population" in resource["url"] or "general" in resource["url"]
-            ):
-                download_urls.append(resource["download_url"])
-
-# list created! now lets download each URL
-if len(download_urls) > 0:
-    paths = download_list(download_urls, "zips")
-else:
-    raise Exception("No matching resources found. Something is wrong!")
-# unzip each path in zip_paths
-
-for path in paths:
-    print(path)
-    print(extract_country_code(path))
