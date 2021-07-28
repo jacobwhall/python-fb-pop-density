@@ -33,7 +33,6 @@ def unzip_list(zip_paths: list, dest_folder: str, rewrite_files=False, cleanup=F
             continue
         """
         try:
-            print("got here")
             ZipFile(path).extractall(dest_folder)
             if cleanup:
                 os.remove(path)
@@ -59,6 +58,7 @@ def download_list(
 
     print("Downloading {} zipped files".format(len(download_urls)))
     zip_paths = []
+    already_unzipped_count = 0
     for url in tqdm(download_urls):
         # some code from https://stackoverflow.com/q/56950987
         # and https://stackoverflow.com/a/56951135
@@ -66,18 +66,28 @@ def download_list(
         filename = url.split("/")[-1]
         # determine relative path of file to write
         file_path = os.path.join(dest_folder, filename)
+
+        """
+        # determine name of destination unzipped file
+        if filename.endswith(".zip"):
+            unzip_dest = os.path.join(dest_folder, "unzipped", filename[:-4])
+            print(unzip_dest)
+        # else: warn("non-zip file downloaded")
+    
+        # if an unzipped version of this file already exists, perhaps we shouldn't
+        # bother downloading it
+        if os.path.exists(unzip_dest) and not rewrite_files:
+            print("true when it shouldnt be")
+            zip_paths.append(file_path)
+            already_unzipped_count += 1
+            continue
+        ...elif
+        """
         # if the file has already been written, perhaps we shouldn't write it again
         if not rewrite_files and os.path.exists(file_path):
             zip_paths.append(file_path)
             continue
-        # TODO: decide if this check should be in this function, unzip_list, or both
-        # make this respond to a changed dest_folder?
-        """
-        elif not rewrite_files and os.path.exists("zips/unzipped/" + filename):
-            print("already-unzipped file found, skipping {}".format(filename))
-            zip_paths.append(file_path)
-            continue
-        """
+
         # attempt to make request
         request = requests.get(url, stream=True)
         # if request worked out, write file to path
@@ -93,7 +103,13 @@ def download_list(
                 )
             )
         sleep(courtesy_pause)
-    if unzip_files:
+    if already_unzipped_count > 0:
+        print(
+            "Skipped {} files that have already been downloaded and unzipped".format(
+                already_unzipped_count
+            )
+        )
+    if unzip_files and already_unzipped_count != len(download_urls):
         return unzip_list(
             zip_paths,
             os.path.join(dest_folder, "unzipped"),
