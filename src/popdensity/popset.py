@@ -1,7 +1,8 @@
 from hdx.hdx_configuration import Configuration
 from hdx.data.organization import Organization
 import pycountry
-from .utils import download_list, extract_country_code
+from .utils import download_list, extract_country_code, check_df
+import pandas as pd
 
 
 class PopSet:
@@ -65,12 +66,27 @@ class PopSet:
             paths = download_list(self.download_urls, "zips", unzip_files=unzip)
         else:
             raise Exception("No matching resources found. Something is wrong!")
+        self.unzipped_paths = paths
         return paths
 
     def deDup(self):
         return
 
     def getCSV(self, file_path):
+        # TODO: check if self.unzipped_paths exists and is non-empty
+        # TODO: check if output filename does not already exist
+        for filename in self.unzipped_paths:
+            if filename == self.unzipped_paths[0]:
+                first_file = True
+                print("this should appear once, before first processing")
+            else:
+                first_file = False
+            print("processing " + filename)
+            thisdf = pd.read_csv(filename)
+            thisdf = check_df(thisdf)
+            print("made it this far")
+            thisdf.to_csv(file_path, mode="a", header=first_file)
+            del thisdf
         return
 
     def getRaster(self, file_path):

@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 import requests
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 from hdx.hdx_configuration import Configuration
 from hdx.data.organization import Organization
 from tqdm import tqdm
@@ -33,10 +33,18 @@ def unzip_list(zip_paths: list, dest_folder: str, rewrite_files=False, cleanup=F
             continue
         """
         try:
+            for info in ZipFile(path).infolist():
+                if "csv" in info.filename:
+                    unzipped_paths.append(os.path.join(dest_folder, info.filename))
+                    csv_detected = True
+                    break
+            """
+            if not csv_detected:
+                warn("CSV file not detected while extracting {}".format(path))
+            """
             ZipFile(path).extractall(dest_folder)
             if cleanup:
                 os.remove(path)
-            unzipped_paths.append(path)
         except:
             raise Exception("An error occured while extracting {}".format(path))
     return unzipped_paths
@@ -58,7 +66,7 @@ def download_list(
 
     print("Downloading {} zipped files".format(len(download_urls)))
     zip_paths = []
-    already_unzipped_count = 0
+    already_downloaded_count = 0
     for url in tqdm(download_urls):
         # some code from https://stackoverflow.com/q/56950987
         # and https://stackoverflow.com/a/56951135
@@ -67,25 +75,10 @@ def download_list(
         # determine relative path of file to write
         file_path = os.path.join(dest_folder, filename)
 
-        """
-        # determine name of destination unzipped file
-        if filename.endswith(".zip"):
-            unzip_dest = os.path.join(dest_folder, "unzipped", filename[:-4])
-            print(unzip_dest)
-        # else: warn("non-zip file downloaded")
-    
-        # if an unzipped version of this file already exists, perhaps we shouldn't
-        # bother downloading it
-        if os.path.exists(unzip_dest) and not rewrite_files:
-            print("true when it shouldnt be")
-            zip_paths.append(file_path)
-            already_unzipped_count += 1
-            continue
-        ...elif
-        """
         # if the file has already been written, perhaps we shouldn't write it again
         if not rewrite_files and os.path.exists(file_path):
             zip_paths.append(file_path)
+            already_downloaded_count += 1
             continue
 
         # attempt to make request
@@ -103,20 +96,20 @@ def download_list(
                 )
             )
         sleep(courtesy_pause)
-    if already_unzipped_count > 0:
+    if already_downloaded_count > 0:
         print(
-            "Skipped {} files that have already been downloaded and unzipped".format(
-                already_unzipped_count
+            "Skipped downloading {} files that already exist".format(
+                already_downloaded_count
             )
         )
-    if unzip_files and already_unzipped_count != len(download_urls):
+    if len(zip_paths) > 0:
         return unzip_list(
             zip_paths,
             os.path.join(dest_folder, "unzipped"),
             rewrite_files=rewrite_files,
         )
     else:
-        return zip_paths
+        return None
 
 
 ##############################################################################
@@ -146,3 +139,27 @@ def extract_country_code(name: str):
                         )
                     )
     return code
+
+
+##############################################################################
+
+
+def check_df(dataframe):
+    # TODO: handle more than three columns
+    if len(dataframe.columns) > 3:
+        raise NotImplementedError(
+            "More than one population density column detected. Support for this has not been added."
+        )
+
+    # if first is lat, second is long
+    if dataframe.columns[0].lower() in ["lat", "latitude"] and dataframe.columns[1].lower() in ["long", "lon", "longitude"]:
+        return dataframe.set_axis(["lat", "long", "pop"], axis=1, inplace=False)
+    # elif first is long, second is lat
+    elif dataframe.columns[0].lower() in ["long", "lon", "longitude"] and dataframe.columns[1].lower() in ["lat", "latitude"]:
+        cols = dataframe.columns
+        # switch first two columns so that output order is lat, long
+        return dataframe[[cols[1], cols[0], cols[2]]].set_axis(["lat", "long", "pop"], axis=1, inplace=False)
+    else:
+        raise ValueError("First two columns not detected as latitude/longitude")
+
+    return dataframe.set_axis(["long", "lat", "pop"], axis=1, inplace=False)
